@@ -2,14 +2,16 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useTRPC } from "@/trpc/client";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import TextAreaAutosize from "react-textarea-autosize";
 import { ArrowUpIcon, Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Form, FormField } from "@/components/ui/form";
+import { Usage } from "./usage";
 
 interface Props {
     projectId: string;
@@ -23,7 +25,10 @@ const formSchema = z.object({
 
 export const MessageForm = ({ projectId }: Props) => {
     const trpc = useTRPC();
+    const router = useRouter();
     const queryClient = useQueryClient();
+    const { data: usage } = useQuery(trpc.usage.status.queryOptions());
+
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -36,11 +41,13 @@ export const MessageForm = ({ projectId }: Props) => {
             form.reset();
             // marks cached data as stale and triggers a refetch, then caches the fresh data.
             queryClient.invalidateQueries(trpc.messages.getMany.queryOptions({ projectId }));
-            // TODO: Invalidate usage status
+            queryClient.invalidateQueries(trpc.usage.status.queryOptions());
         },
         onError: (error) => {
-            // TODO: Redirect to pricing page if specific error
             toast.error(error.message);
+            if(error.data?.code === "TOO_MANY_REQUESTS") {
+                router.push("/pricing");
+            }
         },
     }))
 
@@ -54,10 +61,13 @@ export const MessageForm = ({ projectId }: Props) => {
     const [isFocused, setIsFocused] = useState(false);
     const isPending = createMessage.isPending;
     const isButtonDisabled = isPending || !form.formState.isValid;
-    const showUsage = false;
+    const showUsage = !!usage;
 
     return (
         <Form {...form}>
+            {showUsage && (
+                <Usage points={usage.remainingPoints} msBeforeNext={usage.msBeforeNext} />
+            )}
             <form
                 onSubmit={form.handleSubmit(onSubmit)}
                 className={cn("relative border p-4 pt-1 rounded-xl bg-sidebar dark:bg-sidebar transition-all",
